@@ -2,8 +2,6 @@ name: go-test
 
 on:
   push:
-  schedule:
-    - cron: '*/5 * * * *'
 
 jobs:
   build-and-test:
