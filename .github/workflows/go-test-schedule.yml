@@ -1,17 +1,14 @@
 name: go-test-schedule
 
-on:
-  push:
-  schedule:
-    - cron: '*/5 * * * *'
+#on:
+#  schedule:
+#    - cron: '*/5 * * * *'
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: feature/use_modules
       - uses: actions/setup-go@v5
         id: setup-go
         with:
