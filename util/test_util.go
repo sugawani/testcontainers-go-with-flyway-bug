@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/docker/docker/api/types/container"
 	"github.com/docker/go-connections/nat"
 	"github.com/go-sql-driver/mysql"
 	"github.com/testcontainers/testcontainers-go"
+	mysqlContainer "github.com/testcontainers/testcontainers-go/modules/mysql"
 	"github.com/testcontainers/testcontainers-go/network"
 	"github.com/testcontainers/testcontainers-go/wait"
 	mysql2 "gorm.io/driver/mysql"
@@ -16,7 +18,6 @@ import (
 
 var (
 	dbContainerName = "mysqldb"
-	dbName          = "mysql"
 	dbPort          = 3306
 	dbPortNat       = nat.Port("3306/tcp")
 	mysqlImage      = "mysql:8.0"
@@ -24,17 +25,17 @@ var (
 )
 
 func NewTestDB(ctx context.Context) (*gorm.DB, func()) {
-	containerNetwork, err := network.New(ctx)
+	nw, err := network.New(ctx)
 	if err != nil {
 		panic(err)
 	}
 
-	mysqlC, cleanupFunc, err := createMySQLContainer(ctx, containerNetwork.Name)
+	mysqlC, cleanupFunc, err := createMySQLContainer(ctx, nw)
 	if err != nil {
 		panic(err)
 	}
 
-	if err = execFlywayContainer(ctx, containerNetwork.Name); err != nil {
+	if err = execFlywayContainer(ctx, nw.Name); err != nil {
 		panic(err)
 	}
 
@@ -46,24 +47,13 @@ func NewTestDB(ctx context.Context) (*gorm.DB, func()) {
 	return db, cleanupFunc
 }
 
-func createMySQLContainer(ctx context.Context, networkName string) (testcontainers.Container, func(), error) {
-	mysqlC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: testcontainers.ContainerRequest{
-			Image: mysqlImage,
-			Env: map[string]string{
-				"MYSQL_DATABASE":             dbName,
-				"MYSQL_ALLOW_EMPTY_PASSWORD": "yes",
-			},
-			ExposedPorts: []string{fmt.Sprintf("%d/tcp", dbPort)},
-			Tmpfs:        map[string]string{"/var/lib/mysql": "rw"},
-			Networks:     []string{networkName},
-			NetworkAliases: map[string][]string{
-				networkName: {dbContainerName},
-			},
-			WaitingFor: wait.ForLog("port: 3306  MySQL Community Server"),
-		},
-		Started: true,
-	})
+func createMySQLContainer(ctx context.Context, nw *testcontainers.DockerNetwork) (testcontainers.Container, func(), error) {
+	mysqlC, err := mysqlContainer.Run(ctx, mysqlImage,
+		testcontainers.WithHostConfigModifier(func(c *container.HostConfig) {
+			c.Tmpfs = map[string]string{"/var/lib/mysql": "rw"}
+		}),
+		network.WithNetwork([]string{dbContainerName}, nw),
+	)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -79,12 +69,12 @@ func createMySQLContainer(ctx context.Context, networkName string) (testcontaine
 }
 
 func execFlywayContainer(ctx context.Context, networkName string) error {
-	mysqlDBUrl := fmt.Sprintf("-url=jdbc:mysql://%s:%d/%s?allowPublicKeyRetrieval=true", dbContainerName, dbPort, dbName)
+	mysqlDBUrl := fmt.Sprintf("-url=jdbc:mysql://%s:%d/test?allowPublicKeyRetrieval=true", dbContainerName, dbPort)
 	flywayC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image: flywayImage,
 			Cmd: []string{
-				mysqlDBUrl, "-user=root",
+				mysqlDBUrl, "-user=test", "-password=test",
 				"baseline", "-baselineVersion=0.0",
 				"-locations=filesystem:/flyway", "-validateOnMigrate=false", "migrate"},
 			Networks: []string{networkName},
@@ -123,8 +113,9 @@ func createDBConnection(ctx context.Context, mysqlC testcontainers.Container) (*
 		return nil, err
 	}
 	cfg := mysql.Config{
-		DBName:    dbName,
-		User:      "root",
+		DBName:    "test",
+		User:      "test",
+		Passwd:    "test",
 		Addr:      fmt.Sprintf("%s:%d", host, port.Int()),
 		Net:       "tcp",
 		ParseTime: true,
