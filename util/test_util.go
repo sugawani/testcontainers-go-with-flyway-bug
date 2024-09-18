@@ -113,12 +113,13 @@ func createDBConnection(ctx context.Context, mysqlC testcontainers.Container) (*
 		return nil, err
 	}
 	cfg := mysql.Config{
-		DBName:    "test",
-		User:      "test",
-		Passwd:    "test",
-		Addr:      fmt.Sprintf("%s:%d", host, port.Int()),
-		Net:       "tcp",
-		ParseTime: true,
+		DBName:               "test",
+		User:                 "test",
+		Passwd:               "test",
+		Addr:                 fmt.Sprintf("%s:%d", host, port.Int()),
+		Net:                  "tcp",
+		ParseTime:            true,
+		AllowNativePasswords: true,
 	}
 	db, err := gorm.Open(mysql2.Open(cfg.FormatDSN()))
 	if err != nil {
